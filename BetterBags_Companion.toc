@@ -1,0 +1,11 @@
+## Interface: 16001
+## Title: BetterBags Companion
+## Category: Inventory
+## Notes: Bank tab on the backpack, an account-wide item database, account search, and ItemRack set categories for BetterBags.
+## Author: BetterBags Companion
+## Version: 1.0.0
+## Dependencies: BetterBags
+## OptionalDeps: ItemRack
+## SavedVariables: BetterBagsCompanionDB, BetterBagsEnhancedDB
+
+BetterBags_Companion.lua
