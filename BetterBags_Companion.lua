@@ -41,6 +41,9 @@ local searchEdit
 local resultsFrame
 local bankOverlay
 local modeStrip
+-- Query last copied into BetterBags' own search box. Cleared only when that
+-- box still holds it, so a search the player typed there is left alone.
+local appliedBagQuery
 
 local eventFrame = CreateFrame("Frame")
 
@@ -1516,7 +1519,9 @@ function refreshSearch()
   end
   content:SetWidth(300)
   content:SetHeight(math.max(20, y))
-  resultsFrame:SetHeight(math.min(360, y + 10))
+  -- Keep the account list a dropdown under its box. A near full-bag panel covered
+  -- the items, so a search looked like a popup and the dimming was hidden.
+  resultsFrame:SetHeight(math.min(220, y + 10))
   resultsFrame.scroll:SetVerticalScroll(0)
 end
 
@@ -1537,6 +1542,35 @@ local function showSearchResults()
   frame:SetWidth(math.max(280, searchEdit:GetWidth() or 160))
   frame:Show()
   refreshSearch()
+end
+
+-- BetterBags dims items that miss its own search (bag.searchBox -> Search -> SetMatchesSearch).
+-- The account box is a separate lookup. Copying the query across keeps that dimming, and
+-- never opens BetterBags' overlay search window.
+local function syncBagFilter(text)
+  local bag = boundBag
+  local box = bag and bag.searchBox and bag.searchBox.textBox
+  if not box or box == searchEdit or not box.GetText or not box.SetText then
+    return
+  end
+  text = text or ""
+  local current = box:GetText() or ""
+  if text == "" then
+    if appliedBagQuery and current == appliedBagQuery then
+      appliedBagQuery = nil
+      box:SetText("")
+    else
+      appliedBagQuery = nil
+    end
+    return
+  end
+  if current ~= "" and appliedBagQuery ~= current and current ~= text then
+    return
+  end
+  appliedBagQuery = text
+  if current ~= text then
+    box:SetText(text)
+  end
 end
 
 local function createSearchBox(parent)
@@ -1563,6 +1597,7 @@ local function createSearchBox(parent)
     if self.Instructions then
       self.Instructions:SetShown(self:GetText() == "")
     end
+    syncBagFilter(self:GetText() or "")
     showSearchResults()
   end)
   edit:SetScript("OnEditFocusGained", function()
@@ -1665,10 +1700,82 @@ local function ensureModeStrip(bag)
   return strip
 end
 
+-- BetterBags Next orders headerButtons from the screen edge inward. The last one
+-- showing is the inner end of that row (Show Blizzard Bags, lock, settings, close).
+-- A side rail stacks the same list downward; the highest button is the one in
+-- the title, and the box belongs beside that rather than halfway down the rail.
+local function innerHeaderButton(bag)
+  local buttons = bag.headerButtons
+  if type(buttons) ~= "table" then
+    return nil
+  end
+  local inner, topmost, topY
+  for _, button in ipairs(buttons) do
+    if button and button.IsShown and button:IsShown() then
+      inner = button
+      if button.GetTop then
+        local top = button:GetTop()
+        if top and (not topY or top > topY) then
+          topY = top
+          topmost = button
+        end
+      end
+    end
+  end
+  if topmost and inner and inner.GetTop and topY then
+    local innerTop = inner:GetTop()
+    if innerTop and topY - innerTop > 40 then
+      return topmost
+    end
+  end
+  return inner
+end
+
+local function accountSearchWidth(bag)
+  local width = 130
+  local frameWidth = bag.frame and bag.frame.GetWidth and bag.frame:GetWidth()
+  local buttons = bag.headerButtons
+  if type(frameWidth) ~= "number" or frameWidth <= 0 or type(buttons) ~= "table" then
+    return width
+  end
+  local shown = 0
+  for _, button in ipairs(buttons) do
+    if button and button.IsShown and button:IsShown() then
+      shown = shown + 1
+    end
+  end
+  -- Title on the inner side, header buttons on the outer side, this box between them.
+  local room = frameWidth - shown * 30 - 96
+  if room < width then
+    width = math.max(72, math.floor(room))
+  end
+  return width
+end
+
 local function placeAccountSearch(bag)
   if not searchEdit or searchEdit ~= bag.bbeSearch then
     return nil
   end
+  -- Sit just inside the header row. Anchoring to the close button paints the
+  -- box over Show Blizzard Bags, Lock, and Settings, and a level above those
+  -- buttons lets the box take their clicks.
+  local inner = innerHeaderButton(bag)
+  if inner then
+    local parent = (inner.GetParent and inner:GetParent()) or bag.frame
+    searchEdit:SetParent(parent)
+    searchEdit:SetFrameStrata(parent:GetFrameStrata() or bag.frame:GetFrameStrata() or "MEDIUM")
+    searchEdit:SetFrameLevel(inner:GetFrameLevel() or 1)
+    searchEdit:SetSize(accountSearchWidth(bag), 18)
+    searchEdit:ClearAllPoints()
+    if bag.side == "LEFT" then
+      searchEdit:SetPoint("LEFT", inner, "RIGHT", 6, 0)
+    else
+      searchEdit:SetPoint("RIGHT", inner, "LEFT", -6, 0)
+    end
+    searchEdit:Show()
+    return inner
+  end
+
   local decoration = bag.window and bag.window.decoration
   local overlay = decoration and decoration.GetOverlayFrame and decoration:GetOverlayFrame()
   local close = decoration and decoration.GetCloseButton and decoration:GetCloseButton()
